@@ -89,13 +89,33 @@ public class MissionActivity extends FragmentActivity implements View.OnClickLis
     private float mSpeed = 10.0f;
     private float droneHeading;
 
+    private List<Waypoint> waypointList = new ArrayList<>();
+
+    public static WaypointMission.Builder waypointMissionBuilder;
+    private FlightController mFlightController;
+    private WaypointMissionOperator instance;
+    private WaypointMissionFinishedAction mFinishedAction = WaypointMissionFinishedAction.NO_ACTION;
+    private WaypointMissionHeadingMode mHeadingMode = WaypointMissionHeadingMode.AUTO;
+    private VideoFeeder.VideoDataCallback mReceivedVideoDataCallBack = new VideoFeeder.VideoDataCallback() {
+
+        @Override
+        public void onReceive(byte[] videoBuffer, int size) {
+            if (mCodecManager != null) {
+                mCodecManager.sendDataToDecoder(videoBuffer, size, UsbAccessoryService.VideoStreamSource.Fpv.getIndex());
+            }
+        }
+    };
+    private DJICodecManager mCodecManager = null;
+
     @Override
     protected void onResume() {
         super.onResume();
+        initFlightController();
         BaseProduct product = DJIApplication.getProductInstance();
         if (product != null && product.isConnected()) {
             onProductConnectionChange(DJIApplication.ConnectivityChangeEvent.ProductConnected);
         }
+        //todo调用VideoFeeder设置视频回调接口
     }
 
     @Override
@@ -106,6 +126,7 @@ public class MissionActivity extends FragmentActivity implements View.OnClickLis
     @Override
     protected void onDestroy() {
         EventBus.getDefault().unregister(this);
+        //todo Activity生命周期结束，做回收工作
         super.onDestroy();
     }
 
@@ -149,7 +170,7 @@ public class MissionActivity extends FragmentActivity implements View.OnClickLis
         textureView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
             @Override
             public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
-
+                //todo 视频处理逻辑
             }
 
             @Override
@@ -159,7 +180,7 @@ public class MissionActivity extends FragmentActivity implements View.OnClickLis
 
             @Override
             public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
-
+                //todo 视频处理逻辑
                 return false;
             }
 
@@ -199,6 +220,7 @@ public class MissionActivity extends FragmentActivity implements View.OnClickLis
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void onProductConnectionChange(DJIApplication.ConnectivityChangeEvent event) {
         if (event == DJIApplication.ConnectivityChangeEvent.CameraConnect) {
+            initFlightController();
         } else if (event == DJIApplication.ConnectivityChangeEvent.ProductConnected) {
             loginAccount();
         } else if (event == DJIApplication.ConnectivityChangeEvent.CameraDisconnect) {
@@ -209,7 +231,11 @@ public class MissionActivity extends FragmentActivity implements View.OnClickLis
     }
 
     private void loginAccount() {
+        //todo 调用MSDK登录逻辑
+    }
 
+    private void initFlightController() {
+        //todo 初始化FlightController模块
     }
 
     @Override
@@ -217,6 +243,7 @@ public class MissionActivity extends FragmentActivity implements View.OnClickLis
         if (isAdd == true) {
             Log.d(TAG, "mark new wp longitude:" + point.longitude + " latitude:"+point.latitude);
             markWaypoint(point);
+            //todo 建一个waypoint点，添加到waypointMissionBuilder，思考，如何设置经纬度，Action以及gimbal pitch角度
         } else {
             ToastUtils.setResultToToast("Cannot Add Waypoint");
         }
@@ -295,12 +322,15 @@ public class MissionActivity extends FragmentActivity implements View.OnClickLis
                 break;
             }
             case R.id.upload: {
+                //todo 调用MSDK上传航点任务接口
                 break;
             }
             case R.id.start: {
+                //todo 调用MSDK开始航点任务接口
                 break;
             }
             case R.id.stop: {
+                //todo 调用MSDK停止航点任务接口
                 break;
             }
             case R.id.edit:
@@ -394,13 +424,13 @@ public class MissionActivity extends FragmentActivity implements View.OnClickLis
             public void onCheckedChanged(RadioGroup group, int checkedId) {
                 Log.d(TAG, "Select finish action");
                 if (checkedId == R.id.finishNone) {
-
+                    mFinishedAction = WaypointMissionFinishedAction.NO_ACTION;
                 } else if (checkedId == R.id.finishGoHome) {
-
+                    mFinishedAction = WaypointMissionFinishedAction.GO_HOME;
                 } else if (checkedId == R.id.finishAutoLanding) {
-
+                    mFinishedAction = WaypointMissionFinishedAction.AUTO_LAND;
                 } else if (checkedId == R.id.finishToFirst) {
-
+                    mFinishedAction = WaypointMissionFinishedAction.GO_FIRST_WAYPOINT;
                 }
             }
         });
@@ -412,13 +442,13 @@ public class MissionActivity extends FragmentActivity implements View.OnClickLis
                 Log.d(TAG, "Select heading");
 
                 if (checkedId == R.id.headingNext) {
-
+                    mHeadingMode = WaypointMissionHeadingMode.AUTO;
                 } else if (checkedId == R.id.headingInitDirec) {
-
+                    mHeadingMode = WaypointMissionHeadingMode.USING_INITIAL_DIRECTION;
                 } else if (checkedId == R.id.headingRC) {
-
+                    mHeadingMode = WaypointMissionHeadingMode.CONTROL_BY_REMOTE_CONTROLLER;
                 } else if (checkedId == R.id.headingWP) {
-
+                    mHeadingMode = WaypointMissionHeadingMode.USING_WAYPOINT_HEADING;
                 }
             }
         });
@@ -430,7 +460,11 @@ public class MissionActivity extends FragmentActivity implements View.OnClickLis
                                          public void onClick(DialogInterface dialog, int id) {
                                              String altitudeString = wpAltitudeTV.getText().toString();
                                              altitude = Integer.parseInt(nulltoIntegerDefalt(altitudeString));
-
+                                             Log.e(TAG, "altitude " + altitude);
+                                             Log.e(TAG, "speed " + mSpeed);
+                                             Log.e(TAG, "mFinishedAction " + mFinishedAction);
+                                             Log.e(TAG, "mHeadingMode " + mHeadingMode);
+                                             configWayPointMission();
                                          }
                                      })
                                      .setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
@@ -461,4 +495,7 @@ public class MissionActivity extends FragmentActivity implements View.OnClickLis
         return true;
     }
 
+    private void configWayPointMission() {
+        //todo 配置航点任务
+    }
 }
