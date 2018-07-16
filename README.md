@@ -1,2 +1,3 @@
 # DJI-SDK-Training
-DJI Mobile SDK Training Resources.
+
+This repository is used for DJI Mobile SDK Training, it contains Sample Code, Documentations, etc.
