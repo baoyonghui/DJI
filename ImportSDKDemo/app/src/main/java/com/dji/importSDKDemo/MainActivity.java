@@ -6,14 +6,15 @@ import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
-import android.content.Intent;
-import android.os.Handler;
-import android.os.Looper;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.widget.Toast;
+
+import org.greenrobot.eventbus.EventBus;
+import org.greenrobot.eventbus.Subscribe;
+import org.greenrobot.eventbus.ThreadMode;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -25,13 +26,10 @@ import dji.sdk.base.BaseComponent;
 import dji.sdk.base.BaseProduct;
 import dji.sdk.sdkmanager.DJISDKManager;
 
+
 public class MainActivity extends AppCompatActivity {
 
-    private static final String TAG = MainActivity.class.getName();
-    public static final String FLAG_CONNECTION_CHANGE = "dji_sdk_connection_change";
-    private static BaseProduct mProduct;
-    private Handler mHandler;
-
+    private static final String TAG = MainActivity.class.getSimpleName();
     private static final String[] REQUIRED_PERMISSION_LIST = new String[]{
             Manifest.permission.VIBRATE,
             Manifest.permission.INTERNET,
@@ -47,30 +45,24 @@ public class MainActivity extends AppCompatActivity {
             Manifest.permission.READ_EXTERNAL_STORAGE,
             Manifest.permission.READ_PHONE_STATE,
     };
+
+    private static final int REQUEST_PERMISSION_CODE = 12345;
     private List<String> missingPermission = new ArrayList<>();
     private AtomicBoolean isRegistrationInProgress = new AtomicBoolean(false);
-    private static final int REQUEST_PERMISSION_CODE = 12345;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
-        // When the compile and target version is higher than 22, please request the following permission at runtime to ensure the SDK works well.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            checkAndRequestPermissions();
-        }
-
+        EventBus.getDefault().register(this);
         setContentView(R.layout.activity_main);
-
-        //Initialize DJI SDK Manager
-        mHandler = new Handler(Looper.getMainLooper());
-
+        checkAndRequestPermissions();
     }
 
-    /**
-     * Checks if there is any missing permissions, and
-     * requests runtime permission if needed.
-     */
+    @Override
+    protected void onDestroy() {
+        EventBus.getDefault().unregister(this);
+        super.onDestroy();
+    }
     private void checkAndRequestPermissions() {
         // Check for permissions
         for (String eachPermission : REQUIRED_PERMISSION_LIST) {
@@ -82,17 +74,17 @@ public class MainActivity extends AppCompatActivity {
         if (missingPermission.isEmpty()) {
             startSDKRegistration();
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            showToast("Need to grant the permissions!");
             ActivityCompat.requestPermissions(this,
                     missingPermission.toArray(new String[missingPermission.size()]),
                     REQUEST_PERMISSION_CODE);
         }
+    }
+
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public void onConnectChange(DJIApplication.ConnectivityChangeEvent event) {
 
     }
 
-    /**
-     * Result of runtime permission request
-     */
     @Override
     public void onRequestPermissionsResult(int requestCode,
                                            @NonNull String[] permissions,
@@ -110,92 +102,70 @@ public class MainActivity extends AppCompatActivity {
         if (missingPermission.isEmpty()) {
             startSDKRegistration();
         } else {
-            showToast("Missing permissions!!!");
+            Toast.makeText(getApplicationContext(), "Missing permissions!!!", Toast.LENGTH_LONG).show();
         }
     }
-
     private void startSDKRegistration() {
         if (isRegistrationInProgress.compareAndSet(false, true)) {
             AsyncTask.execute(new Runnable() {
                 @Override
                 public void run() {
-                    showToast("registering, pls wait...");
-                    DJISDKManager.getInstance().registerApp(MainActivity.this.getApplicationContext(), new DJISDKManager.SDKManagerCallback() {
-                        @Override
-                        public void onRegister(DJIError djiError) {
-                            if (djiError == DJISDKError.REGISTRATION_SUCCESS) {
-                                showToast("Register Success");
-                                DJISDKManager.getInstance().startConnectionToProduct();
-                            } else {
-                                showToast("Register sdk fails, please check the bundle id and network connection!");
-                            }
-                            Log.v(TAG, djiError.getDescription());
-                        }
-
-                        @Override
-                        public void onProductDisconnect() {
-                            Log.d(TAG, "onProductDisconnect");
-                            notifyStatusChange();
-                        }
-                        @Override
-                        public void onProductConnect(BaseProduct baseProduct) {
-                            Log.d(TAG, String.format("onProductConnect newProduct:%s", baseProduct));
-                            notifyStatusChange();
-                        }
-                        @Override
-                        public void onComponentChange(BaseProduct.ComponentKey componentKey, BaseComponent oldComponent,
-                                                      BaseComponent newComponent) {
-                            if (newComponent != null) {
-                                newComponent.setComponentListener(new BaseComponent.ComponentListener() {
-                                    @Override
-                                    public void onConnectivityChange(boolean connected) {
-                                        notifyStatusChange();
-                                    }
-                                });
-                                if (oldComponent == null && newComponent != null) {
-                                    notifyStatusChange();
-                                }
-                            }
-
-                            Log.d(TAG,
-                                    String.format("onComponentChange key:%s, oldComponent:%s, newComponent:%s",
-                                            componentKey,
-                                            oldComponent,
-                                            newComponent));
-
-                        }
-
-                    });
+                    ToastUtils.setResultToToast(MainActivity.this.getString(R.string.sdk_registration_doing_message));
+                    DJISDKManager.getInstance().registerApp(MainActivity.this.getApplicationContext(), sdkManagerCallback);
                 }
             });
         }
     }
 
-
-    private void notifyStatusChange() {
-        mHandler.removeCallbacks(updateRunnable);
-        mHandler.postDelayed(updateRunnable, 500);
-    }
-
-    private Runnable updateRunnable = new Runnable() {
-
+    private static DJISDKManager.SDKManagerCallback sdkManagerCallback = new DJISDKManager.SDKManagerCallback() {
         @Override
-        public void run() {
-            Intent intent = new Intent(FLAG_CONNECTION_CHANGE);
-            sendBroadcast(intent);
+        public void onRegister(DJIError djiError) {
+            if (djiError == DJISDKError.REGISTRATION_SUCCESS) {
+                Log.d("App registration", DJISDKError.REGISTRATION_SUCCESS.getDescription());
+                DJISDKManager.getInstance().startConnectionToProduct();
+                ToastUtils.setResultToToast(DJIApplication.getInstance().getString(R.string.sdk_registration_success_message));
+            } else {
+                ToastUtils.setResultToToast(DJIApplication.getInstance().getString(R.string.sdk_registration_message));
+            }
+            Log.v(TAG, djiError.getDescription());
+        }
+        @Override
+        public void onProductDisconnect() {
+            Log.d(TAG, "onProductDisconnect");
+            DJIApplication.notifyStatusChange(DJIApplication.ConnectivityChangeEvent.ProductConnected);
+        }
+        @Override
+        public void onProductConnect(BaseProduct baseProduct) {
+            Log.d(TAG, String.format("onProductConnect newProduct:%s", baseProduct));
+            DJIApplication.notifyStatusChange(DJIApplication.ConnectivityChangeEvent.ProductDisconnected);
+        }
+        @Override
+        public void onComponentChange(BaseProduct.ComponentKey componentKey, BaseComponent oldComponent,
+                                      BaseComponent newComponent) {
+            if (newComponent != null) {
+                if (componentKey.equals(BaseProduct.ComponentKey.CAMERA)) {
+                    newComponent.setComponentListener(new BaseComponent.ComponentListener() {
+                        @Override
+                        public void onConnectivityChange(boolean connected) {
+                            if (connected) {
+                                DJIApplication.notifyStatusChange(DJIApplication.ConnectivityChangeEvent.CameraConnect);
+                            } else {
+                                DJIApplication.notifyStatusChange(DJIApplication.ConnectivityChangeEvent.CameraDisconnect);
+                            }
+                        }
+                    });
+                    if (oldComponent == null && newComponent != null) {
+                        DJIApplication.notifyStatusChange(DJIApplication.ConnectivityChangeEvent.CameraConnect);
+                    }
+                }
+            }
+
+            Log.d(TAG,
+                    String.format("onComponentChange key:%s, oldComponent:%s, newComponent:%s",
+                            componentKey,
+                            oldComponent,
+                            newComponent));
+
         }
     };
-
-    private void showToast(final String toastMsg) {
-
-        Handler handler = new Handler(Looper.getMainLooper());
-        handler.post(new Runnable() {
-            @Override
-            public void run() {
-                Toast.makeText(getApplicationContext(), toastMsg, Toast.LENGTH_LONG).show();
-            }
-        });
-
-    }
-
 }
