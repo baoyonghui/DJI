@@ -10,6 +10,8 @@ import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
+import android.view.View;
+import android.widget.Button;
 import android.widget.Toast;
 
 import org.greenrobot.eventbus.EventBus;
@@ -22,12 +24,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import dji.common.error.DJIError;
 import dji.common.error.DJISDKError;
+import dji.common.useraccount.UserAccountState;
+import dji.common.util.CommonCallbacks;
 import dji.sdk.base.BaseComponent;
 import dji.sdk.base.BaseProduct;
 import dji.sdk.sdkmanager.DJISDKManager;
+import dji.sdk.useraccount.UserAccountManager;
 
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements View.OnClickListener {
 
     private static final String TAG = MainActivity.class.getSimpleName();
     private static final String[] REQUIRED_PERMISSION_LIST = new String[]{
@@ -49,6 +54,7 @@ public class MainActivity extends AppCompatActivity {
     private static final int REQUEST_PERMISSION_CODE = 12345;
     private List<String> missingPermission = new ArrayList<>();
     private AtomicBoolean isRegistrationInProgress = new AtomicBoolean(false);
+    private Button loginbtn;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -56,6 +62,9 @@ public class MainActivity extends AppCompatActivity {
         EventBus.getDefault().register(this);
         setContentView(R.layout.activity_main);
         checkAndRequestPermissions();
+
+        loginbtn = (Button) findViewById(R.id.loginBtn);
+        loginbtn.setOnClickListener(this);
     }
 
     @Override
@@ -117,6 +126,21 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    private void loginAccount() {
+
+        UserAccountManager.getInstance()
+                .logIntoDJIUserAccount(this, new CommonCallbacks.CompletionCallbackWith<UserAccountState>() {
+                    @Override
+                    public void onSuccess(final UserAccountState userAccountState) {
+                        Log.e(TAG, "Login Success");
+                    }
+                    @Override
+                    public void onFailure(DJIError error) {
+                        ToastUtils.setResultToToast("Login Error:" + error.getDescription());
+                    }
+                });
+    }
+
     private static DJISDKManager.SDKManagerCallback sdkManagerCallback = new DJISDKManager.SDKManagerCallback() {
         @Override
         public void onRegister(DJIError djiError) {
@@ -168,4 +192,15 @@ public class MainActivity extends AppCompatActivity {
 
         }
     };
+
+    @Override
+    public void onClick(View view) {
+        switch (view.getId()){
+            case R.id.loginBtn:
+                loginAccount();
+                break;
+            default:
+                break;
+        }
+    }
 }
